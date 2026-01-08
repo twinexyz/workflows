@@ -276,17 +276,18 @@ jobs:
             $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
 
       - name: Sign the images
-        env:
-          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
-          # Create a space-separated list of tags
-          images=""
-          for tag in ${TAGS}; do
-            images+="${tag} "
-          done
+          # 1. Use the SHA tag (which we just pushed) as our reference
+          REF="${{ env.REGISTRY_IMAGE }}:${{ env.SHA }}"
           
-          # Sign all tags using Keyless OIDC
-          cosign sign --yes ${images}
+          # 2. Resolve that tag to its specific SHA256 digest
+          #    Output format: ghcr.io/owner/repo@sha256:e3b0c44...
+          DIGEST_REF=$(cosign triangulate "$REF")
+          
+          echo "🔏 Resolved tag to digest: $DIGEST_REF"
+          
+          # 3. Sign the DIGEST (this removes the warning)
+          cosign sign --yes "$DIGEST_REF"
 
       - name: Inspect image
         run: |
@@ -311,35 +312,29 @@ jobs:
 
       - name: Verify Image Signature
         env:
-          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ inputs.repo_name }}:${{ inputs.sha }}
+          TAG_REF: ghcr.io/${{ github.repository_owner }}/${{ inputs.repo_name }}:${{ inputs.sha }}
           IDENTITY_REGEX: "^https://github.com/${{ github.repository }}/.*"
           OIDC_ISSUER: "https://token.actions.githubusercontent.com"
         run: |
+          # 1. Resolve the tag to the digest (just like in the signing step)
+          IMAGE_DIGEST=$(cosign triangulate "$TAG_REF")
+          
           echo "-------------------------------------------------------"
-          echo "🔍 STARTING VERIFICATION"
-          echo "📦 Image:    $IMAGE"
+          echo "🔍 VERIFYING DIGEST"
+          echo "📦 Ref:      $IMAGE_DIGEST"
           echo "🆔 Match:    $IDENTITY_REGEX"
           echo "-------------------------------------------------------"
           
-          # Run verify and capture output
           if cosign verify \
             --certificate-identity-regexp "$IDENTITY_REGEX" \
             --certificate-oidc-issuer "$OIDC_ISSUER" \
-            "$IMAGE"; then
+            "$IMAGE_DIGEST"; then
             
             echo ""
-            echo "✎ᝰ. VERIFICATION SUCCESSFUL!"
-            echo "The image was signed by this repository's OIDC identity."
-            echo ""
-            echo "✎ᝰ. To verify manually, run:"
-            echo "   cosign verify \\"
-            echo "     --certificate-identity-regexp \"${IDENTITY_REGEX}\" \\"
-            echo "     --certificate-oidc-issuer \"${OIDC_ISSUER}\" \\"
-            echo "     ${IMAGE}"
+            echo "✎ᝰ.✅ VERIFICATION SUCCESSFUL!"
             
           else
             echo ""
-            echo "✎ᝰ. VERIFICATION FAILED"
-            echo "The signature does not match the expected identity."
+            echo "✎ᝰ.❌ VERIFICATION FAILED"
             exit 1
           fi
