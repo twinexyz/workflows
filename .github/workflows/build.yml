@@ -312,18 +312,18 @@ jobs:
       - name: Verify Image Signature
         env:
           IMAGE: ghcr.io/${{ github.repository_owner }}/${{ inputs.repo_name }}:${{ inputs.sha }}
-          IDENTITY_REGEX: "^https://github.com/${{ github.repository }}/.*"
+          IDENTITY: "https://github.com/${{ github.repository_owner }}/workflows/.github/workflows/build.yml@refs/heads/main"
           OIDC_ISSUER: "https://token.actions.githubusercontent.com"
         run: |
           echo "-------------------------------------------------------"
           echo "🔍 STARTING VERIFICATION"
           echo "📦 Image:    $IMAGE"
-          echo "🆔 Match:    $IDENTITY_REGEX"
+          echo "🆔 Match:    $IDENTITY"
           echo "-------------------------------------------------------"
           
           # Run verify and capture output
           if cosign verify \
-            --certificate-identity-regexp "$IDENTITY_REGEX" \
+            --certificate-identity "$IDENTITY" \
             --certificate-oidc-issuer "$OIDC_ISSUER" \
             "$IMAGE"; then
             
@@ -333,7 +333,7 @@ jobs:
             echo ""
             echo "✎ᝰ. To verify manually, run:"
             echo "   cosign verify \\"
-            echo "     --certificate-identity-regexp \"${IDENTITY_REGEX}\" \\"
+            echo "     --certificate-identity \"${IDENTITY}\" \\"
             echo "     --certificate-oidc-issuer \"${OIDC_ISSUER}\" \\"
             echo "     ${IMAGE}"
             
