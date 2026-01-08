@@ -116,10 +116,10 @@ jobs:
         target: ${{ fromJSON(inputs.docker_targets) }}
         include:
           - arch: amd64
-            runner: ubuntu-latest #[self-hosted, linux, x64]
+            runner: large-amd64 #[self-hosted, linux, x64]
             platform: linux/amd64
           - arch: arm64
-            runner: 	ubuntu-24.04-arm #[self-hosted, linux, arm64]
+            runner: large-arm64 #[self-hosted, linux, arm64]
             platform: linux/arm64
     env:
       ACTIONS_RESULTS_URL: ${{ matrix.arch == 'arm64' && secrets.CACHE_SERVER_URL_ARM64 || secrets.CACHE_SERVER_URL }}
