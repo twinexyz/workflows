@@ -21,7 +21,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
           profile: minimal
@@ -47,7 +47,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          default: true
 
       - name: Cache Cargo registry and target
         uses: actions/cache@v4
@@ -62,8 +67,10 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
+
       - name: Run Cargo Test
         run: cargo test --all-features --locked
+
       - name: Install cargo check tools
         run: |
           cargo install --locked cargo-deny || true
@@ -81,9 +88,6 @@ jobs:
           cargo audit
           cargo pants
 
-      - name: Clean Up private Repo
-        run: rm -rf ~/.git-credentials
-        
       - name: Handle build failure
         if: ${{ failure() }}
         run: echo "Build failed. Check logs for details."
@@ -102,9 +106,12 @@ jobs:
           persist-credentials: false
 
       # Ensure rustfmt is installed and setup problem matcher
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
-          components: rustfmt
+          toolchain: stable
+          profile: minimal
+          override: true
+          default: true
 
       - name: Cache Cargo registry and target
         uses: actions/cache@v5.0.1
@@ -139,7 +146,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          default: true
 
       - name: Cache Cargo registry and target
         uses: actions/cache@v4
