@@ -1,0 +1,103 @@
+name: Precommit Check
+
+on:
+  workflow_call:
+
+env:
+  # Disable incremental compilation for faster from-scratch builds
+  #CARGO_INCREMENTAL: 0
+  #CARGO_TERM_COLOR: always
+  ACTIONS_RESULTS_URL: ${{ secrets.CACHE_SERVER_URL }}
+  ACTIONS_RESULTS_URL_ARM64: ${{ secrets.CACHE_SERVER_URL_ARM64 }}
+
+jobs:
+  precommit:
+    name: precommit check
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: step-security/harden-runner@v2.14.0
+        with:
+          egress-policy: audit
+
+      - name: Start timer
+        id: start-time
+        run: echo "start_time=$(date +%s)" >> $GITHUB_ENV
+
+      - uses: actions/checkout@v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          default: true
+
+      - name: Cache Cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+            ~/.rustup/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Add rustfmt (nightly)
+        run: rustup component add --toolchain nightly rustfmt clippy
+
+      - name: Cache cargo-udeps
+        id: cache-cargo-udeps
+        uses: actions/cache@v4
+        env:
+          cache-name: cache-cargo-udeps
+        with:
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
+          path: |
+            ~/.cargo/bin/cargo-udeps
+
+      - if: ${{ steps.cache-cargo-udeps.outputs.cache-hit != 'true' }}
+        name: Install cargo-udeps
+        run: cargo install cargo-udeps --force --locked
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.x
+
+      - run: rustup component add clippy
+
+      - name: Install pre-commit
+        run: pip install pre-commit
+
+      - name: Run pre-commit with color (console) and save plain output
+        id: precommit
+        run: |
+          set -o pipefail
+          pre-commit run --all-files --show-diff-on-failure | tee precommit_output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+
+      - name: Format pre-commit output for GitHub Summary
+        if: always()
+        run: |
+          echo '### 🧹 Pre-commit Summary' >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat precommit_output.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail if pre-commit failed
+        if: steps.precommit.outputs.exit_code != '0'
+        run: exit 1
+
+      - name: End timer and calculate duration
+        id: set-duration
+        run: |
+          end_time=$(date +%s)
+          duration=$((end_time - ${{ env.start_time }}))
+          echo "duration=${duration}" >> $GITHUB_OUTPUT

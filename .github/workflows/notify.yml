@@ -1,0 +1,173 @@
+name: Slack Deployment Alert
+
+on:
+  workflow_call:
+    inputs:
+      sha:
+        required: true
+        type: string
+      branch_slug:
+        required: true
+        type: string
+      repo_name:
+        required: true
+        type: string
+      commit_message:
+        required: true
+        type: string
+      commit_url:
+        required: true
+        type: string
+      commit_actor:
+        required: true
+        type: string
+      event_name:
+        required: true
+        type: string
+      workflow_name:
+        required: true
+        type: string
+      run_url:
+        required: true
+        type: string
+      job_status:
+        required: true
+        type: string
+      # Optional durations (only passed for post notify)
+      anchore_scan_duration:
+        required: false
+        type: string
+      anchore_sbom_scan_duration:
+        required: false
+        type: string
+      trivy_scan_duration:
+        required: false
+        type: string
+      docker_scout_scan_duration:
+        required: false
+        type: string
+      precommit_duration:
+        required: false
+        type: string
+      build_duration:
+        required: false
+        type: string
+      deploy_duration:
+        required: false
+        type: string
+    secrets:
+      SLACK_WEBHOOK_URL:
+        required: true
+
+jobs:
+  notify-slack:
+    runs-on: [self-hosted, linux, x64]
+    name: Notify Slack
+    if: always()
+    steps:
+      - uses: step-security/harden-runner@v2.14.0
+        with:
+          egress-policy: audit
+
+      - name: Send Slack Notification
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          REPO: ${{ inputs.repo_name }}
+          ORG: ${{ github.repository_owner }}
+          REF: ${{ inputs.branch_slug }}
+          SHA: ${{ inputs.sha }}
+          COMMIT_MESSAGE: ${{ inputs.commit_message }}
+          COMMIT_URL: ${{ inputs.commit_url }}
+          ACTOR: ${{ inputs.commit_actor }}
+          EVENT_NAME: ${{ inputs.event_name }}
+          WORKFLOW_NAME: ${{ inputs.workflow_name }}
+          RUN_URL: ${{ inputs.run_url }}
+          JOB_STATUS: ${{ inputs.job_status }}
+          ANCHORE_SCAN_DURATION: ${{ inputs.anchore_scan_duration }}
+          ANCHORE_SBOM_SCAN_DURATION: ${{ inputs.anchore_sbom_scan_duration }}
+          TRIVY_SCAN_DURATION: ${{ inputs.trivy_scan_duration }}
+          DOCKER_SCOUT_SCAN_DURATION: ${{ inputs.docker_scout_scan_duration }}
+          PRECOMMIT_DURATION: ${{ inputs.precommit_duration }}
+          BUILD_DURATION: ${{ inputs.build_duration }}
+          DEPLOY_DURATION: ${{ inputs.deploy_duration }}
+        run: |
+          if [[ "$JOB_STATUS" == "success" ]]; then
+            STATUS_TITLE="✅ Success"
+            COLOR=5763719
+          elif [[ "$JOB_STATUS" == "failure" ]]; then
+            STATUS_TITLE="❌ Failed"
+            COLOR=15548997
+          elif [[ "$JOB_STATUS" == "started" ]]; then
+            STATUS_TITLE="🟡 Started"
+            COLOR=16776960
+          elif [[ "$JOB_STATUS" == "cancelled" ]]; then
+            STATUS_TITLE="🟡 Cancelled"
+            COLOR=16776960
+          else
+            STATUS_TITLE="❔ Unknown"
+            COLOR=10070709
+          fi
+
+          # Base fields (converted to Slack attachment fields)
+          FIELDS=$(jq -n --arg repo "$REPO" \
+                            --arg org "$ORG" \
+                            --arg ref "$REF" \
+                            --arg event "$EVENT_NAME" \
+                            --arg sha "${SHA:0:7}" \
+                            --arg commit_url "$COMMIT_URL" \
+                            --arg msg "$COMMIT_MESSAGE" \
+                            --arg actor "$ACTOR" \
+                            --arg workflow "$WORKFLOW_NAME" \
+                            --arg run_url "$RUN_URL" \
+                            --arg time "$(date -u '+%Y-%m-%d, %H:%M UTC')" \
+          '[
+            { title: "Repository", value: ("<https://github.com/" + $org + "/" + $repo + "|" + $repo + ">"), short: true },
+            { title: "Ref",        value: $ref, short: true },
+            { title: "Event",      value: ("<" + $commit_url + "|`" + $sha + "`> " + $msg), short: false },
+            { title: "Triggered by", value: $actor, short: true },
+            { title: "Workflow",   value: ("<" + $run_url + "|" + $workflow + ">"), short: true },
+            { title: "Timestamp (UTC)", value: $time, short: false }
+          ]')
+
+          # Optional duration fields, only included if non-empty
+          DURATION_FIELDS=$(jq -n \
+            --arg pre "$PRECOMMIT_DURATION" \
+            --arg build "$BUILD_DURATION" \
+            --arg anchore "$ANCHORE_SCAN_DURATION" \
+            --arg sbom "$ANCHORE_SBOM_SCAN_DURATION" \
+            --arg trivy "$TRIVY_SCAN_DURATION" \
+            --arg scout "$DOCKER_SCOUT_SCAN_DURATION" \
+            --arg deploy "$DEPLOY_DURATION" \
+            '[
+              ($pre    | select(length > 0) | { title: "Pre-commit", value: ., short: true }),
+              ($build  | select(length > 0) | { title: "Build", value: ., short: true }),
+              ($anchore| select(length > 0) | { title: "Anchore", value: ., short: true }),
+              ($sbom   | select(length > 0) | { title: "SBOM", value: ., short: true }),
+              ($trivy  | select(length > 0) | { title: "Trivy", value: ., short: true }),
+              ($scout  | select(length > 0) | { title: "Docker Scout", value: ., short: true }),
+              ($deploy | select(length > 0) | { title: "Deploy", value: ., short: true })
+            ] | map(select(. != null))')
+
+          # Merge fields
+          MERGED_FIELDS=$(jq -n --argjson f1 "$FIELDS" --argjson f2 "$DURATION_FIELDS" '$f1 + $f2')
+
+          # Final payload adjusted for Slack 'attachments'
+          PAYLOAD=$(jq -n \
+            --arg username "deployment-alerts" \
+            --arg title "${STATUS_TITLE}: ${WORKFLOW_NAME}" \
+            --arg color "$COLOR" \
+            --argjson fields "$MERGED_FIELDS" \
+          '{
+            username: $username,
+            attachments: [
+              {
+                fallback: $title,
+                color: $color,
+                title: $title,
+                fields: $fields
+              }
+            ]
+          }')
+
+          echo "$PAYLOAD"
+          curl -H "Content-Type: application/json" -X POST -d "$PAYLOAD" "$SLACK_WEBHOOK_URL"

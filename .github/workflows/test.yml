@@ -1,0 +1,165 @@
+name: Test
+
+on:
+  workflow_call:
+
+env:
+  ACTIONS_RESULTS_URL: ${{ secrets.CACHE_SERVER_URL }}
+  ACTIONS_RESULTS_URL_ARM64: ${{ secrets.CACHE_SERVER_URL_ARM64 }}
+
+
+jobs:
+  check:
+    name: cargo check
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: step-security/harden-runner@v2.14.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@v5.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+          default: true
+
+      - name: Run Cargo Check
+        run: cargo check --locked
+
+      - name: Handle build failure
+        if: ${{ failure() }}
+        run: echo "Build failed. Check logs for details."
+
+  test:
+    name: cargo test
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: step-security/harden-runner@v2.14.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@v5.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache Cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+            ~/.rustup/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: Run Cargo Test
+        run: cargo test --all-features --locked
+      - name: Install cargo check tools
+        run: |
+          cargo install --locked cargo-deny || true
+          cargo install --locked cargo-outdated || true
+          cargo install --locked cargo-udeps || true
+          cargo install --locked cargo-audit || true
+          cargo install --locked cargo-pants || true
+
+      - name: Check
+        run: |
+          cargo deny check
+          cargo outdated --exit-code 1
+          cargo udeps
+          rm -rf ~/.cargo/advisory-db
+          cargo audit
+          cargo pants
+
+      - name: Clean Up private Repo
+        run: rm -rf ~/.git-credentials
+        
+      - name: Handle build failure
+        if: ${{ failure() }}
+        run: echo "Build failed. Check logs for details."
+
+  # Check formatting with rustfmt
+  formatting:
+    name: cargo fmt
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: step-security/harden-runner@v2.14.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@v5.0.0
+        with:
+          persist-credentials: false
+
+      # Ensure rustfmt is installed and setup problem matcher
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt
+
+      - name: Cache Cargo registry and target
+        uses: actions/cache@v5.0.1
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+            ~/.rustup/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Rustfmt Check
+        uses: actions-rust-lang/rustfmt@v1
+
+      - name: Handle build failure
+        if: ${{ failure() }}
+        run: echo "Build failed. Check logs for details."
+
+  lint:
+    name: cargo lint
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: step-security/harden-runner@v2.14.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@v5.0.0
+        with:
+          persist-credentials: false
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache Cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+            ~/.rustup/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Lint
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy -- -D warnings
+          
+      - name: Handle build failure
+        if: ${{ failure() }}
+        run: echo "Build failed. Check logs for details."
