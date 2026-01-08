@@ -61,7 +61,7 @@ on:
 
 jobs:
   notify-slack:
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest #[self-hosted, linux, x64]
     name: Notify Slack
     if: always()
     steps:
