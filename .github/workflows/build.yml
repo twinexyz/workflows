@@ -285,7 +285,7 @@ jobs:
             images+="${tag} "
           done
           
-          # Sign all tags using Keyless OIDC
+          #🔑🔏 Sign all tags using Keyless OIDC
           cosign sign --yes ${images}
 
       - name: Inspect image
@@ -328,10 +328,10 @@ jobs:
             "$IMAGE"; then
             
             echo ""
-            echo "✎ᝰ. VERIFICATION SUCCESSFUL!"
+            echo "✅✅ VERIFICATION SUCCESSFUL!"
             echo "The image was signed by this repository's OIDC identity."
             echo ""
-            echo "✎ᝰ. To verify manually, run:"
+            echo "╰┈➤📜 To verify manually, run:"
             echo "   cosign verify \\"
             echo "     --certificate-identity \"${IDENTITY}\" \\"
             echo "     --certificate-oidc-issuer \"${OIDC_ISSUER}\" \\"
@@ -339,7 +339,7 @@ jobs:
             
           else
             echo ""
-            echo "✎ᝰ. VERIFICATION FAILED"
+            echo "🚨❌ VERIFICATION FAILED"
             echo "The signature does not match the expected identity."
             exit 1
           fi
